@@ -25,9 +25,13 @@ app = Flask(__name__)
 app.secret_key = 'your-secret-key-123'
 
 # MongoDB configuration
-app.config["MONGO_URI"] = os.getenv("MONGODB_URI")
 try:
-    mongo = PyMongo(app)
+    app.config["MONGO_URI"] = os.getenv("MONGODB_URI")
+    if not app.config["MONGO_URI"]:
+        raise ValueError("MONGODB_URI environment variable is not set")
+    
+    # Initialize MongoDB connection with retry writes and TLS
+    mongo = PyMongo(app, tlsAllowInvalidCertificates=True)
     # Test connection
     mongo.db.command('ping')
     print("MongoDB connection successful!")
