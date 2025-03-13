@@ -24,19 +24,19 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-123'
 
-# MongoDB configuration
 try:
     app.config["MONGO_URI"] = os.getenv("MONGODB_URI")
     if not app.config["MONGO_URI"]:
         raise ValueError("MONGODB_URI environment variable is not set")
-    
-    # Initialize MongoDB connection with retry writes and TLS
-    mongo = PyMongo(app, tlsAllowInvalidCertificates=True)
+
+    # Initialize MongoDB connection with retry writes and TLS settings
+    mongo = PyMongo(app)
+
     # Test connection
     mongo.db.command('ping')
-    print("MongoDB connection successful!")
+    print("✅ MongoDB connection successful!")
 except Exception as e:
-    print(f"MongoDB connection error: {str(e)}")
+    print(f"❌ MongoDB connection error: {str(e)}")
     raise
 
 # Initialize Flask-Login
@@ -56,12 +56,19 @@ class User(UserMixin):
     def name(self):
         return self.user_data.get('name', 'User')
 
+# Helper function for MongoDB operations
+def execute_mongo_operation(operation, *args, **kwargs):
+    try:
+        return operation(*args, **kwargs)
+    except Exception as e:
+        print(f"MongoDB operation error: {str(e)}")
+        return None
+
+# Example of using the helper function in the user loader
 @login_manager.user_loader
 def load_user(user_id):
-    user_data = mongo.db.users.find_one({'_id': ObjectId(user_id)})
-    if user_data:
-        return User(user_data)
-    return None
+    user_data = execute_mongo_operation(mongo.db.users.find_one, {'_id': ObjectId(user_id)})
+    return User(user_data) if user_data else None
 
 # Authentication routes
 @app.route('/login', methods=['GET', 'POST'])
@@ -510,8 +517,6 @@ def get_usage_data():
 def add_energy_usage():
     try:
         data = request.get_json()
-        print(f"Received usage data: {data}")
-        
         # Validate required fields
         required_fields = ['appliance', 'usage', 'duration']
         for field in required_fields:
@@ -519,14 +524,11 @@ def add_energy_usage():
                 return jsonify({'success': False, 'error': f'Missing required field: {field}'})
         
         # Validate numeric fields
-        try:
-            usage = float(data['usage'])
-            duration = float(data['duration'])
-            if usage <= 0 or duration <= 0:
-                return jsonify({'success': False, 'error': 'Usage and duration must be positive numbers'})
-        except (ValueError, TypeError):
-            return jsonify({'success': False, 'error': 'Invalid numeric values'})
-            
+        usage = float(data['usage'])
+        duration = float(data['duration'])
+        if usage <= 0 or duration <= 0:
+            return jsonify({'success': False, 'error': 'Usage and duration must be positive numbers'})
+        
         # Create reading document
         reading = {
             'user_id': current_user.get_id(),
@@ -534,40 +536,30 @@ def add_energy_usage():
             'appliance': data['appliance'],
             'usage': usage,
             'duration': duration,
-            'usage_per_hour': usage / duration if duration > 0 else 0,
-            'cost': usage * 0.12  # Example rate of $0.12 per kWh
+            'usage_per_hour': usage / duration if duration > 0 else 0
         }
         
         # Insert reading
-        result = mongo.db.energy_usage.insert_one(reading)
+        result = execute_mongo_operation(mongo.db.energy_usage.insert_one, reading)
         
-        if not result.inserted_id:
+        if not result:
             return jsonify({'success': False, 'error': 'Failed to save reading'})
-            
+        
         # Update user's total usage
-        mongo.db.users.update_one(
+        execute_mongo_operation(mongo.db.users.update_one,
             {'_id': current_user.get_id()},
-            {
-                '$inc': {
-                    'total_energy_usage': usage,
-                    'readings_count': 1
-                }
-            },
+            {'$inc': {'total_energy_usage': usage, 'readings_count': 1}},
             upsert=True
         )
         
-        # Calculate trend (compare with average of last 5 readings)
-        previous_readings = list(mongo.db.energy_usage.find({
+        # Calculate trend
+        previous_readings = list(execute_mongo_operation(mongo.db.energy_usage.find, {
             'user_id': current_user.get_id(),
             'appliance': data['appliance']
         }).sort('timestamp', -1).limit(5))
         
-        if previous_readings:
-            avg_usage = sum(r['usage'] for r in previous_readings) / len(previous_readings)
-            trend = ((usage - avg_usage) / avg_usage * 100) if avg_usage > 0 else 0
-        else:
-            trend = 0
-            
+        trend = ((usage - (sum(r['usage'] for r in previous_readings) / len(previous_readings))) / (sum(r['usage'] for r in previous_readings) / len(previous_readings)) * 100) if previous_readings else 0
+        
         return jsonify({
             'success': True,
             'message': 'Reading added successfully',
@@ -1507,12 +1499,10 @@ def get_personalized_tips():
 
 # Environmental Impact Dashboard Routes
 @app.route('/user_guide')
-@login_required
 def user_guide():
     return render_template('user_guide.html')
 
 @app.route('/get_dashboard_data')
-@login_required
 def get_dashboard_data():
     try:
         # Get current user's data
@@ -1803,7 +1793,6 @@ def get_energy_tips():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/analyze_waste', methods=['POST'])
-@login_required
 def analyze_waste():
     """Analyze waste image using Gemini API"""
     try:
@@ -2017,35 +2006,26 @@ def add_usage():
         }
         
         # Insert reading
-        result = mongo.db.energy_usage.insert_one(reading)
+        result = execute_mongo_operation(mongo.db.energy_usage.insert_one, reading)
         
-        if not result.inserted_id:
+        if not result:
             return jsonify({'success': False, 'error': 'Failed to save reading'})
-            
+        
         # Update user's total usage
-        mongo.db.users.update_one(
+        execute_mongo_operation(mongo.db.users.update_one,
             {'_id': current_user.get_id()},
-            {
-                '$inc': {
-                    'total_energy_usage': usage,
-                    'readings_count': 1
-                }
-            },
+            {'$inc': {'total_energy_usage': usage, 'readings_count': 1}},
             upsert=True
         )
         
-        # Calculate trend (compare with average of last 5 readings)
-        previous_readings = list(mongo.db.energy_usage.find({
+        # Calculate trend
+        previous_readings = list(execute_mongo_operation(mongo.db.energy_usage.find, {
             'user_id': current_user.get_id(),
             'appliance': data['appliance']
         }).sort('timestamp', -1).limit(5))
         
-        if previous_readings:
-            avg_usage = sum(r['usage'] for r in previous_readings) / len(previous_readings)
-            trend = ((usage - avg_usage) / avg_usage * 100) if avg_usage > 0 else 0
-        else:
-            trend = 0
-            
+        trend = ((usage - (sum(r['usage'] for r in previous_readings) / len(previous_readings))) / (sum(r['usage'] for r in previous_readings) / len(previous_readings)) * 100) if previous_readings else 0
+        
         return jsonify({
             'success': True,
             'message': 'Reading added successfully',
