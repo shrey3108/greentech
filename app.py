@@ -7,7 +7,7 @@ import json
 from bson import json_util
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import LinearRegression
+#from sklearn.linear_model import LinearRegression
 import random
 from bson import ObjectId
 import google.generativeai as genai
@@ -745,110 +745,6 @@ def calculate_savings_potential(current_usage, recommendations):
         'yearly': round(yearly_savings, 2),
         'co2_reduction': round(yearly_savings * 0.85, 2)  # kg of CO2 per kWh saved
     }
-
-@app.route('/get_insights')
-@login_required
-def get_insights():
-    try:
-        # Get last 7 days of data for better pattern recognition
-        start_time = get_current_time() - timedelta(days=7)
-        usage_data = list(mongo.db.energy_usage.find({"timestamp": {"$gte": start_time}}))
-        
-        if not usage_data:
-            return jsonify({
-                "recommendations": [],
-                "savings_potential": {
-                    "monthly": 0,
-                    "yearly": 0,
-                    "co2_reduction": 0
-                },
-                "predictions": {
-                    "next_day": 0,
-                    "next_week": 0,
-                    "confidence": 0
-                }
-            })
-        
-        # Generate recommendations
-        recommendations = get_appliance_recommendations(usage_data)
-        
-        # Calculate potential savings
-        total_usage = sum(d["usage"] for d in usage_data)
-        savings = calculate_savings_potential(total_usage, recommendations)
-        
-        # Prepare usage data for prediction
-        df = pd.DataFrame(usage_data)
-        df['hour'] = df['timestamp'].apply(lambda x: x.hour)
-        df['day'] = df['timestamp'].apply(lambda x: x.weekday())
-        
-        # Train model on historical data
-        X = df[['hour', 'day']]
-        y = df['usage']
-        model = LinearRegression()
-        model.fit(X, y)
-        
-        # Predict next day and week
-        next_24h = []
-        current_hour = get_current_time().hour
-        current_day = get_current_time().weekday()
-        
-        for h in range(24):
-            next_hour = (current_hour + h) % 24
-            next_day = (current_day + (current_hour + h) // 24) % 7
-            prediction = model.predict([[next_hour, next_day]])[0]
-            next_24h.append(max(0, prediction))
-        
-        confidence = max(0, min(100, model.score(X, y) * 100))
-        
-        return jsonify({
-            "recommendations": recommendations,
-            "savings_potential": savings,
-            "predictions": {
-                "next_day": round(sum(next_24h), 2),
-                "next_week": round(sum(next_24h) * 7, 2),
-                "confidence": round(confidence, 1),
-                "hourly_forecast": [round(x, 2) for x in next_24h]
-            }
-        })
-        
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/predict_usage')
-@login_required
-def predict_usage():
-    try:
-        # Get historical data for prediction
-        data = list(mongo.db.energy_usage.find().sort("timestamp", -1).limit(24))
-        
-        if len(data) < 12:  # Need minimum data for prediction
-            return jsonify({"error": "Insufficient data for prediction"}), 400
-            
-        df = pd.DataFrame(data)
-        df['hour'] = pd.to_datetime(df['timestamp']).dt.hour
-        
-        # Prepare data for model
-        X = df[['hour']].values
-        y = df['usage'].values
-        
-        # Train model
-        model = LinearRegression()
-        model.fit(X, y)
-        
-        # Predict next hour
-        next_hour = (get_current_time().hour + 1) % 24
-        prediction = model.predict([[next_hour]])[0]
-        
-        # Calculate confidence based on R² score
-        confidence = model.score(X, y)
-        
-        return jsonify({
-            "predicted_usage": round(prediction, 2),
-            "confidence": round(confidence * 100, 1),
-            "next_hour": next_hour
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/food/items', methods=['POST'])
 @login_required
@@ -2256,6 +2152,7 @@ def get_energy_dashboard_data():
             'success': False,
             'error': str(e),
             'total_users': 0,
+
             'energy_saved': 0,
             'carbon_reduced': 0,
             'eco_tip': "Start tracking your energy usage today!"
