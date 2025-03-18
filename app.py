@@ -408,7 +408,7 @@ def impact_dashboard_page():
 
 
 @app.route('/carbon_tracker')
-@login_required
+# @login_required
 def carbon_tracker():
     try:
         # Get user's carbon tracking data
@@ -919,7 +919,7 @@ def claim_food_item(item_id):
 
 
 @app.route('/get_waste_data')
-@login_required
+# @login_required
 def get_waste_data():
     try:
         user_id = current_user.get_id()
@@ -1924,7 +1924,7 @@ def analyze_waste():
 
 
 @app.route('/api/add_usage', methods=['POST'])
-@login_required
+# @login_required
 def add_usage():
     try:
         data = request.get_json()
@@ -2096,7 +2096,7 @@ def get_energy_usage_data():
 
 
 @app.route('/energy_monitor')
-@login_required
+# @login_required
 def energy_monitor():
     try:
         # Get user's energy data
