@@ -1,3 +1,4 @@
+#import generativeai
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash
 from flask_pymongo import PyMongo
 from pymongo import MongoClient
@@ -225,62 +226,6 @@ def get_current_time():
     return datetime.now(IST)
 
 
-def generate_sample_data():
-    """Generate 24 hours of sample data if database is empty"""
-    try:
-        # Clear existing data for testing
-        energy_data.delete_many({})
-
-        current_time = get_current_time()
-        sample_data = []
-
-        # Generate data for the last 24 hours
-        for hour in range(24):
-            time_point = current_time - timedelta(hours=hour)
-
-            # Generate readings for different appliances
-            for appliance in APPLIANCE_POWER.keys():
-                # More usage during peak hours (7-9 AM and 6-10 PM)
-                is_peak = time_point.hour in [7, 8, 9, 18, 19, 20, 21, 22]
-                multiplier = 1.5 if is_peak else 1.0
-
-                power_range = APPLIANCE_POWER[appliance]
-                base_usage = power_range['typical']
-                variation = (power_range['max'] - power_range['min']) * 0.2
-                usage = base_usage + random.uniform(-variation, variation)
-                usage = usage * multiplier
-
-                # Ensure usage stays within defined ranges
-                usage = max(power_range['min'], min(power_range['max'], usage))
-
-                reading = {
-                    "timestamp": time_point,
-                    "appliance": appliance,
-                    "usage": round(usage, 3),
-                    "cost": round(usage * 0.12, 2)  # $0.12 per kWh
-                }
-                sample_data.append(reading)
-
-        if sample_data:
-            energy_data.insert_many(sample_data)
-            print(f"Generated {len(sample_data)} sample readings")
-
-            # Verify data was inserted
-            count = energy_data.count_documents({})
-            print(f"Total documents in database: {count}")
-
-            # Print a few sample readings
-            print("\nSample readings:")
-            for reading in energy_data.find().limit(3):
-                print(
-                    f"Time: {reading['timestamp']}, Appliance: {reading['appliance']}, Usage: {reading['usage']} kWh/h")
-
-    except Exception as e:
-        print(f"Error generating sample data: {e}")
-
-
-# Generate sample data on startup
-generate_sample_data()
 
 # Configure Gemini API
 genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
@@ -788,28 +733,13 @@ def add_food_item():
             "quantity": float(data["quantity"]),
             "expiry": datetime.fromisoformat(data["expiry"]),
             "storage": data["storage"],
-            "user_id": current_user.get_id(),
+            "user_id": current_user.get_id(),  # Track who added the food
             "status": "available",
-            "added_at": get_current_time()
+            "added_at": datetime.utcnow()  # Use UTC time for consistency
         }
         result = food_items.insert_one(item)
 
-        # Update food waste stats
-        waste_stats.update_one(
-            {'user_id': current_user.get_id()},
-            {
-                '$inc': {
-                    'total_food_saved': float(data["quantity"]),
-                    'meals_provided': float(data["quantity"]) * 2,  # Assuming 0.5kg per meal
-                    'co2_saved': float(data["quantity"]) * 2.5  # 2.5kg CO2 per kg food saved
-                },
-                '$set': {
-                    'last_activity': get_current_time()
-                }
-            },
-            upsert=True
-        )
-
+        # Do NOT update stats here (score should only increase when claimed)
         return jsonify({
             "success": True,
             "id": str(result.inserted_id),
@@ -827,10 +757,10 @@ def add_food_item():
 @login_required
 def get_food_items():
     try:
-        user_id = current_user.get_id()
+        # Get all available food items (not just the current user's)
         items = list(food_items.find({
-            "user_id": user_id,
-            "expiry": {"$gte": get_current_time()}
+            "status": "available",  # Only show available items
+            "expiry": {"$gte": datetime.utcnow()}  # Only show non-expired items
         }).sort("expiry", 1))
 
         # Process items for display
@@ -870,7 +800,7 @@ def get_food_stats():
 @login_required
 def get_impact_food_stats():
     try:
-        # Get stats from database
+        # Get global stats from database
         stats = mongo.db.impact_stats.find_one({"_id": "global"}) or {
             "total_food_saved": 0,
             "meals_provided": 0,
@@ -892,23 +822,55 @@ def get_impact_food_stats():
 def claim_food_item(item_id):
     try:
         user_id = current_user.get_id()
-        result = food_items.update_one(
-            {
-                '_id': ObjectId(item_id),
-                'user_id': user_id,
-                'status': 'available'
-            },
+
+        # Find the food item
+        item = food_items.find_one({
+            '_id': ObjectId(item_id),
+            'status': 'available'  # Only allow claiming available items
+        })
+        if not item:
+            return jsonify({"error": "Item not found or already claimed"}), 404
+
+        # Update the item status to "claimed"
+        food_items.update_one(
+            {'_id': ObjectId(item_id)},
             {
                 '$set': {
                     'status': 'claimed',
-                    'claimed_at': get_current_time(),
+                    'claimed_at': datetime.utcnow(),
                     'claimed_by': user_id
                 }
             }
         )
 
-        if result.modified_count == 0:
-            return jsonify({"error": "Item not found or already claimed"}), 404
+        # Update global stats (increment score only when claimed)
+        mongo.db.impact_stats.update_one(
+            {"_id": "global"},
+            {
+                '$inc': {
+                    "total_food_saved": item["quantity"],
+                    "meals_provided": item["quantity"] * 2,  # Assuming 0.5kg per meal
+                    "co2_saved": item["quantity"] * 2.5  # 2.5kg CO2 per kg food saved
+                }
+            },
+            upsert=True
+        )
+
+        # Update user-specific stats
+        waste_stats.update_one(
+            {'user_id': user_id},
+            {
+                '$inc': {
+                    'total_food_saved': item["quantity"],
+                    'meals_provided': item["quantity"] * 2,
+                    'co2_saved': item["quantity"] * 2.5
+                },
+                '$set': {
+                    'last_activity': datetime.utcnow()
+                }
+            },
+            upsert=True
+        )
 
         return jsonify({
             "success": True,
@@ -1449,16 +1411,16 @@ def user_guide():
 def get_dashboard_data():
     try:
         # Get current user's data
-        carbon_data = mongo.db.carbon_activities.find({}).sort('timestamp', -1).limit(30)
-        waste_data = mongo.db.waste_stats.find({}).sort('timestamp', -1).limit(30)
+        carbon_data = list(mongo.db.carbon_activities.find({}).sort('timestamp', -1).limit(30))
+        waste_data = list(mongo.db.waste_stats.find({}).sort('timestamp', -1).limit(30))
 
-        # Calculate totals
-        carbon_offset = sum(float(activity.get('carbon_impact', 0)) for activity in carbon_data)
-        waste_reduction = sum(float(stat.get('items_recycled', 0)) for stat in waste_data)
+        # Calculate totals with proper handling of None values
+        carbon_offset = sum(float(activity.get('carbon_impact', 0)) for activity in carbon_data if activity.get('carbon_impact') is not None)
+        waste_reduction = sum(float(stat.get('items_recycled', 0)) for stat in waste_data if stat.get('items_recycled') is not None)
 
-        # Calculate progress percentages
-        carbon_progress = min(100, (carbon_offset / 100) * 100)
-        waste_progress = min(100, (waste_reduction / 50) * 100)
+        # Calculate progress percentages with proper handling of division by zero
+        carbon_progress = min(100, (carbon_offset / 100) * 100) if carbon_offset > 0 else 0
+        waste_progress = min(100, (waste_reduction / 50) * 100) if waste_reduction > 0 else 0
 
         # Get recent activities for timeline
         recent_activities = list(mongo.db.carbon_activities.find({})
@@ -1469,7 +1431,7 @@ def get_dashboard_data():
         for activity in recent_activities:
             timeline.append({
                 'title': activity.get('activity_type', 'Activity').title(),
-                'description': f"Impact: {abs(activity.get('carbon_impact', 0))} kg CO2",
+                'description': f"Impact: {abs(float(activity.get('carbon_impact', 0)))} kg CO2",
                 'date': activity.get('timestamp', datetime.now()).strftime('%Y-%m-%d')
             })
 
@@ -1498,13 +1460,13 @@ def get_dashboard_data():
                 'title': 'Zero Waste Week',
                 'description': 'Minimize your waste production for 7 days',
                 'status': 'active',
-                'progress': min(100, (waste_reduction / 20) * 100)
+                'progress': min(100, (waste_reduction / 20) * 100) if waste_reduction > 0 else 0
             },
             {
                 'title': 'Energy Saver',
                 'description': 'Reduce energy consumption by 20%',
                 'status': 'active',
-                'progress': min(100, (carbon_offset / 50) * 100)
+                'progress': min(100, (carbon_offset / 50) * 100) if carbon_offset > 0 else 0
             }
         ]
 
@@ -1558,7 +1520,6 @@ def get_dashboard_data():
             'challenges': [],
             'community': {'rank': 0, 'rank_percentile': 0, 'contribution': 0}
         }), 500
-
 
 @app.route('/get_user_stats')
 @login_required
@@ -2156,7 +2117,6 @@ def energy_monitor():
         flash('Error loading energy monitor', 'error')
         return redirect(url_for('index'))
 
-
 @app.route('/api/get_energy_dashboard_data')
 @login_required
 def get_energy_dashboard_data():
@@ -2216,10 +2176,6 @@ def get_energy_dashboard_data():
             'carbon_reduced': 0,
             'eco_tip': "Start tracking your energy usage today!"
         })
-@app.route('/data')
-def get_data():
-    data = {"status": "success", "data": [1, 2, 3]}
-    return jsonify(data)
 
 
 if __name__ == '__main__':
