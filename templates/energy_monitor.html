@@ -7,7 +7,7 @@
     <div class="row">
         <!-- Energy Usage Form -->
         <div class="col-md-4">
-            <div class="card shadow-sm">
+            <div class="card shadow-sm mb-4">
                 <div class="card-header bg-primary text-white">
                     <h5 class="mb-0">Add Energy Reading</h5>
                 </div>
@@ -33,6 +33,18 @@
                     </form>
                 </div>
             </div>
+
+            <!-- Recommendations Card -->
+            <div class="card shadow-sm">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">Energy Saving Tips</h5>
+                </div>
+                <div class="card-body">
+                    <ul class="list-group list-group-flush" id="recommendationsList">
+                        <!-- Recommendations will be added here -->
+                    </ul>
+                </div>
+            </div>
         </div>
 
         <!-- Usage Statistics -->
@@ -42,7 +54,7 @@
                     <div class="card shadow-sm mb-4">
                         <div class="card-body text-center">
                             <i class="fas fa-bolt text-warning mb-2" style="font-size: 2rem;"></i>
-                            <h6 class="text-muted">Current Usage</h6>
+                            <h6 class="text-muted">Total Usage</h6>
                             <h4 id="currentUsage">0.00</h4>
                             <small class="text-muted">kWh</small>
                         </div>
@@ -53,7 +65,7 @@
                         <div class="card-body text-center">
                             <i class="fas fa-calendar-day text-info mb-2" style="font-size: 2rem;"></i>
                             <h6 class="text-muted">Daily Average</h6>
-                            <h4 id="dailyAverage">0.00</h4>
+                            <h4 id="avgUsage">0.00</h4>
                             <small class="text-muted">kWh/day</small>
                         </div>
                     </div>
@@ -61,9 +73,9 @@
                 <div class="col-md-4">
                     <div class="card shadow-sm mb-4">
                         <div class="card-body text-center">
-                            <i class="fas fa-leaf text-success mb-2" style="font-size: 2rem;"></i>
+                            <i class="fas fa-cloud text-danger mb-2" style="font-size: 2rem;"></i>
                             <h6 class="text-muted">Carbon Footprint</h6>
-                            <h4 id="carbonFootprint">0.00</h4>
+                            <h4 id="totalCarbon">0.00</h4>
                             <small class="text-muted">kg CO₂</small>
                         </div>
                     </div>
@@ -95,35 +107,12 @@
                             <th>Appliance</th>
                             <th>Usage (kWh)</th>
                             <th>Duration (h)</th>
+                            <th>Carbon Impact</th>
                             <th>Timestamp</th>
                             <th>Trend</th>
                         </tr>
                     </thead>
-                    <tbody id="readingsTable">
-                        {% for reading in readings %}
-                        <tr>
-                            <td>
-                                <i class="fas fa-plug text-primary me-2"></i>
-                                {{ reading.appliance }}
-                            </td>
-                            <td>{{ "%.2f"|format(reading.usage) }}</td>
-                            <td>{{ "%.1f"|format(reading.duration) }}</td>
-                            <td>{{ reading.timestamp.strftime('%I:%M %p') }}</td>
-                            <td>
-                                {% if reading.trend > 0 %}
-                                <span class="trend-up">
-                                    <i class="fas fa-arrow-up"></i>
-                                    {{ "%.1f"|format(reading.trend) }}%
-                                </span>
-                                {% else %}
-                                <span class="trend-down">
-                                    <i class="fas fa-arrow-down"></i>
-                                    {{ "%.1f"|format(reading.trend|abs) }}%
-                                </span>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
+                    <tbody id="readingsTableBody">
                     </tbody>
                 </table>
             </div>
@@ -135,48 +124,95 @@
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Initialize chart
-    const ctx = document.getElementById('usageChart').getContext('2d');
-    let usageChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: [],
-            datasets: [{
-                label: 'Energy Usage (kWh/min)',
-                data: [],
-                borderColor: '#2196F3',
-                backgroundColor: 'rgba(33, 150, 243, 0.1)',
-                fill: true,
-                tension: 0.4
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: true,
-                    position: 'top'
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    title: {
-                        display: true,
-                        text: 'Energy Usage (kWh)'
+    let usageChart;
+
+    function fetchUsageData() {
+        fetch('/api/get_energy_usage_data')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Update usage stats
+                    document.getElementById('currentUsage').textContent = data.total_usage.toFixed(2);
+                    document.getElementById('avgUsage').textContent = data.avg_usage.toFixed(2);
+                    document.getElementById('totalCarbon').textContent = data.total_carbon.toFixed(2);
+
+                    // Update recommendations
+                    const recommendationsList = document.getElementById('recommendationsList');
+                    recommendationsList.innerHTML = '';
+                    data.recommendations.forEach(tip => {
+                        const li = document.createElement('li');
+                        li.className = 'list-group-item';
+                        li.innerHTML = `<i class="fas fa-check-circle text-success me-2"></i>${tip}`;
+                        recommendationsList.appendChild(li);
+                    });
+
+                    // Update recent readings table
+                    const tbody = document.getElementById('readingsTableBody');
+                    tbody.innerHTML = '';
+                    
+                    data.readings.forEach(reading => {
+                        const row = document.createElement('tr');
+                        const timestamp = new Date(reading.timestamp);
+                        const formattedDate = timestamp.toLocaleString('en-IN', {
+                            timeZone: 'Asia/Kolkata',
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: true
+                        });
+                        row.innerHTML = `
+                            <td><i class="fas fa-plug text-primary me-2"></i>${reading.appliance}</td>
+                            <td>${reading.usage.toFixed(2)} kWh</td>
+                            <td>${reading.duration} hours</td>
+                            <td>${reading.carbon_impact} kg CO₂</td>
+                            <td>${formattedDate}</td>
+                            <td>
+                                <span class="badge ${reading.trend > 0 ? 'bg-danger' : 'bg-success'}">
+                                    ${reading.trend > 0 ? '↑' : '↓'} ${Math.abs(reading.trend).toFixed(1)}%
+                                </span>
+                            </td>
+                        `;
+                        tbody.appendChild(row);
+                    });
+
+                    // Update chart
+                    if (usageChart) {
+                        usageChart.destroy();
                     }
-                },
-                x: {
-                    title: {
-                        display: true,
-                        text: 'Time (minutes)'
-                    }
+
+                    const ctx = document.getElementById('usageChart').getContext('2d');
+                    usageChart = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: data.chart_labels,
+                            datasets: [{
+                                label: 'Energy Usage (kWh)',
+                                data: data.chart_values,
+                                borderColor: 'rgb(75, 192, 192)',
+                                tension: 0.1,
+                                fill: false
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    title: {
+                                        display: true,
+                                        text: 'Energy Usage (kWh)'
+                                    }
+                                }
+                            }
+                        }
+                    });
                 }
-            }
-        }
-    });
+            })
+            .catch(error => console.error('Error fetching usage data:', error));
+    }
 
     // Handle form submission
     document.getElementById('usageForm').addEventListener('submit', function(e) {
@@ -199,9 +235,12 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(result => {
             if (result.success) {
                 // Clear form
-                document.getElementById('usageForm').reset();
+                document.getElementById('usage').value = '';
+                document.getElementById('duration').value = '';
+                
                 // Show success message
                 alert('Reading added successfully!');
+                
                 // Refresh data
                 fetchUsageData();
             } else {
@@ -209,75 +248,15 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         })
         .catch(error => {
-            console.error('Error:', error);
-            alert('An error occurred while adding the reading');
+            console.error('Error adding reading:', error);
+            alert('Error adding reading. Please try again.');
         });
     });
-
-    // Fetch usage data
-    function fetchUsageData() {
-        fetch('/api/get_energy_usage_data')
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    // Update stats
-                    document.getElementById('currentUsage').textContent = data.current_usage;
-                    document.getElementById('dailyAverage').textContent = data.daily_average;
-                    document.getElementById('carbonFootprint').textContent = data.carbon_footprint;
-
-                    // Update chart
-                    usageChart.data.labels = data.chart_data.labels;
-                    usageChart.data.datasets[0].data = data.chart_data.values;
-                    usageChart.update();
-
-                    // Update readings table
-                    const tbody = document.getElementById('readingsTable');
-                    tbody.innerHTML = '';
-                    
-                    data.recent_readings.forEach(reading => {
-                        const row = document.createElement('tr');
-                        row.innerHTML = `
-                            <td>
-                                <i class="fas fa-plug text-primary me-2"></i>
-                                ${reading.appliance}
-                            </td>
-                            <td>${reading.usage.toFixed(2)}</td>
-                            <td>${reading.duration.toFixed(1)}</td>
-                            <td>${new Date(reading.timestamp).toLocaleString()}</td>
-                            <td>
-                                ${reading.trend > 0 
-                                    ? `<span class="trend-up">
-                                        <i class="fas fa-arrow-up"></i>
-                                        ${reading.trend}%
-                                       </span>`
-                                    : `<span class="trend-down">
-                                        <i class="fas fa-arrow-down"></i>
-                                        ${Math.abs(reading.trend)}%
-                                       </span>`
-                                }
-                            </td>
-                        `;
-                        tbody.appendChild(row);
-                    });
-                }
-            })
-            .catch(error => console.error('Error:', error));
-    }
 
     // Initial data fetch
     fetchUsageData();
     
-    // Refresh data every 5 minutes
-    setInterval(fetchUsageData, 300000);
-});
+    // Refresh data every 2 minutes
+    setInterval(fetchUsageData, 2 * 60 * 1000);
 </script>
-
-<style>
-.trend-up {
-    color: #4caf50;
-}
-.trend-down {
-    color: #f44336;
-}
-</style>
 {% endblock %}
