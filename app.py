@@ -223,8 +223,7 @@ IST = pytz.timezone('Asia/Kolkata')
 
 def get_current_time():
     """Get current time in IST"""
-    return datetime.now(IST)
-
+    return datetime.now(IST).replace(microsecond=0)  # Remove microseconds for consistency
 
 
 # Configure Gemini API
@@ -1957,12 +1956,16 @@ def get_energy_usage_data():
     try:
         user_id = current_user.get_id()
 
-        # Get recent readings with trend calculation
-        recent_readings = []
+        # Get all readings for the user
         readings = list(mongo.db.energy_usage.find(
             {'user_id': user_id}
-        ).sort('timestamp', -1).limit(10))
+        ).sort('timestamp', -1))  # Sort by timestamp in descending order
 
+        # Initialize variables
+        recent_readings = []
+        total_usage = 0
+
+        # Process each reading
         for reading in readings:
             # Calculate trend for each reading
             previous_readings = list(mongo.db.energy_usage.find({
@@ -1977,21 +1980,26 @@ def get_energy_usage_data():
             else:
                 trend = 0
 
+            # Add to total usage
+            total_usage += reading['usage']
+
+            # Append processed reading to recent_readings
             recent_readings.append({
                 'timestamp': reading['timestamp'],
                 'appliance': reading['appliance'],
                 'usage': reading['usage'],
                 'duration': reading['duration'],
-                'trend': round(trend, 1)
+                'trend': round(trend, 1),
+                'carbon_impact': round(reading['usage'] * 0.85, 2)  # 0.85 kg CO2 per kWh
             })
 
-        # Get chart data (last 60 minutes)
-        sixty_mins_ago = get_current_time() - timedelta(minutes=60)
-        chart_data = mongo.db.energy_usage.aggregate([
+        # Get chart data for the last 24 hours
+        twenty_four_hours_ago = get_current_time() - timedelta(hours=24)
+        chart_data = list(mongo.db.energy_usage.aggregate([
             {
                 '$match': {
                     'user_id': user_id,
-                    'timestamp': {'$gte': sixty_mins_ago}
+                    'timestamp': {'$gte': twenty_four_hours_ago}
                 }
             },
             {
@@ -2006,55 +2014,73 @@ def get_energy_usage_data():
                 }
             },
             {'$sort': {'_id': 1}}
-        ])
+        ]))
 
+        # Prepare chart labels and values
         chart_labels = []
         chart_values = []
 
-        for item in chart_data:
-            chart_labels.append(item['_id'])
-            chart_values.append(round(item['total_usage'], 2))
+        if chart_data:
+            for data in chart_data:
+                chart_labels.append(data['_id'])
+                chart_values.append(round(data['total_usage'], 2))
 
-        # Calculate current month's usage
-        current_month = get_current_time().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        current_usage = mongo.db.energy_usage.aggregate([
-            {
-                '$match': {
-                    'user_id': user_id,
-                    'timestamp': {'$gte': current_month}
-                }
-            },
-            {
-                '$group': {
-                    '_id': None,
-                    'total_usage': {'$sum': '$usage'}
-                }
-            }
-        ]).next()['total_usage'] if mongo.db.energy_usage.count_documents({'user_id': user_id}) > 0 else 0
+        # Calculate average usage and total carbon footprint
+        avg_usage = total_usage / len(recent_readings) if recent_readings else 0
+        total_carbon = total_usage * 0.85  # 0.85 kg CO2 per kWh
 
-        # Calculate daily average
-        days_in_month = get_current_time().day
-        daily_average = current_usage / days_in_month if days_in_month > 0 else 0
+        # Generate recommendations based on usage patterns
+        recommendations = []
+        if recent_readings:
+            appliance_usage = {}
+            for reading in recent_readings:
+                appliance = reading['appliance']
+                if appliance not in appliance_usage:
+                    appliance_usage[appliance] = 0
+                appliance_usage[appliance] += reading['usage']
 
-        # Calculate carbon footprint (0.5 kg CO2 per kWh)
-        carbon_footprint = current_usage * 0.5
+            # Add appliance-specific recommendations
+            for appliance, usage in appliance_usage.items():
+                if usage > avg_usage:
+                    recommendations.append(f"Consider reducing {appliance.lower()} usage to save energy")
+                if 'AC' in appliance and usage > 5:
+                    recommendations.append("Set AC temperature to 24-26°C for optimal efficiency")
+                if 'Light' in appliance:
+                    recommendations.append("Switch to LED bulbs to reduce lighting energy consumption")
 
+        # Add general recommendations
+        recommendations.extend([
+            "Turn off appliances when not in use to avoid standby power consumption",
+            "Use natural light during daytime to reduce lighting costs",
+            "Regular maintenance of appliances ensures better energy efficiency",
+            "Consider using smart power strips to eliminate phantom loads"
+        ])
+
+        # Return JSON response
         return jsonify({
             'success': True,
-            'current_usage': round(current_usage, 2),
-            'daily_average': round(daily_average, 2),
-            'carbon_footprint': round(carbon_footprint, 2),
-            'recent_readings': recent_readings,
-            'chart_data': {
-                'labels': chart_labels,
-                'values': chart_values
-            }
+            'readings': recent_readings,
+            'chart_labels': chart_labels,
+            'chart_values': chart_values,
+            'total_usage': round(total_usage, 2),
+            'avg_usage': round(avg_usage, 2),
+            'total_carbon': round(total_carbon, 2),
+            'recommendations': recommendations[:5]  # Send top 5 recommendations
         })
 
     except Exception as e:
-        print(f"Error getting usage data: {str(e)}")
-        return jsonify({'success': False, 'error': str(e)})
-
+        print(f"Error in get_energy_usage_data: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'readings': [],
+            'chart_labels': [],
+            'chart_values': [],
+            'total_usage': 0,
+            'avg_usage': 0,
+            'total_carbon': 0,
+            'recommendations': []
+        })
 
 @app.route('/energy_monitor')
 # @login_required
@@ -2179,4 +2205,4 @@ def get_energy_dashboard_data():
 
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5676)
+    app.run(debug=True, host='0.0.0.0', port=5896)
