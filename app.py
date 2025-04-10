@@ -2082,8 +2082,9 @@ def get_energy_usage_data():
             'recommendations': []
         })
 
+
 @app.route('/energy_monitor')
-# @login_required
+@login_required  # Uncommented this decorator
 def energy_monitor():
     try:
         # Get user's energy data
@@ -2096,7 +2097,9 @@ def energy_monitor():
 
         # Calculate current usage and daily average
         current_month = get_current_time().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        current_usage = mongo.db.energy_usage.aggregate([
+
+        # Handle case when there are no readings
+        usage_result = list(mongo.db.energy_usage.aggregate([
             {
                 "$match": {
                     "user_id": user_id,
@@ -2109,10 +2112,13 @@ def energy_monitor():
                     "total_usage": {"$sum": "$usage"}
                 }
             }
-        ]).next()["total_usage"] if mongo.db.energy_usage.count_documents({"user_id": user_id}) > 0 else 0
+        ]))
+
+        current_usage = usage_result[0]["total_usage"] if usage_result else 0
 
         # Calculate daily average
-        daily_average = current_usage / (get_current_time().day) if current_usage > 0 else 0
+        current_day = get_current_time().day
+        daily_average = current_usage / current_day if current_day > 0 else 0
 
         # Calculate carbon footprint (rough estimate: 0.5 kg CO2 per kWh)
         carbon_footprint = current_usage * 0.5
@@ -2140,8 +2146,13 @@ def energy_monitor():
 
     except Exception as e:
         print(f"Error in energy_monitor route: {str(e)}")
-        flash('Error loading energy monitor', 'error')
-        return redirect(url_for('energy_monitor'))
+        flash(f'Error loading energy monitor: {str(e)}', 'error')
+        return render_template('energy_monitor.html',
+                               current_usage=0,
+                               daily_average=0,
+                               carbon_footprint=0,
+                               recent_readings=[],
+                               appliances=[])
 
 @app.route('/api/get_energy_dashboard_data')
 @login_required
