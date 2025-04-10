@@ -2141,7 +2141,7 @@ def energy_monitor():
     except Exception as e:
         print(f"Error in energy_monitor route: {str(e)}")
         flash('Error loading energy monitor', 'error')
-        return redirect(url_for('index'))
+        return redirect(url_for('energy_monitor'))
 
 @app.route('/api/get_energy_dashboard_data')
 @login_required
