@@ -4,6 +4,13 @@
 
 {% block content %}
 <div class="container py-5">
+    <!-- Back Button for Mobile -->
+    <div class="d-md-none mb-3">
+        <button class="btn btn-outline-secondary" id="backButton">
+            <i class="fas fa-arrow-left me-2"></i>Back
+        </button>
+    </div>
+    
     <div class="row">
         <!-- Profile Information -->
         <div class="col-lg-4 mb-4">
@@ -217,8 +224,35 @@ Together, we can create a better future.
     document.body.removeChild(a);
 }
 
+// Handle back button navigation
+function handleBackButton() {
+    // Check if we have a previous page in history
+    if (window.history.length > 1) {
+        window.history.back();
+    } else {
+        // If no previous page, redirect to home
+        window.location.href = "{{ url_for('index') }}";
+    }
+}
+
 // Load stats when page loads
-document.addEventListener('DOMContentLoaded', loadUserStats);
+document.addEventListener('DOMContentLoaded', function() {
+    loadUserStats();
+    
+    // Add event listener for back button
+    document.getElementById('backButton').addEventListener('click', handleBackButton);
+    
+    // Handle browser back button
+    window.addEventListener('popstate', function(event) {
+        // Prevent default behavior
+        event.preventDefault();
+        // Navigate back
+        handleBackButton();
+    });
+    
+    // Push current state to history
+    window.history.pushState({ page: 'profile' }, 'Profile', window.location.href);
+});
 
 // Add event listener for download button
 document.getElementById('downloadReportBtn').addEventListener('click', generateReport);
