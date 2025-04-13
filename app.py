@@ -169,9 +169,9 @@ def update_profile():
                 return redirect(url_for('profile'))
             update_data['password'] = generate_password_hash(new_password)
 
-        # Update the user in database
+        # Update the user in database - convert user_id to ObjectId
         result = mongo.db.users.update_one(
-            {'_id': user_id},
+            {'_id': ObjectId(user_id)},
             {'$set': update_data}
         )
 
@@ -1407,11 +1407,14 @@ def user_guide():
 
 
 @app.route('/get_dashboard_data')
+@login_required
 def get_dashboard_data():
     try:
+        user_id = current_user.get_id()
+        
         # Get current user's data
-        carbon_data = list(mongo.db.carbon_activities.find({}).sort('timestamp', -1).limit(30))
-        waste_data = list(mongo.db.waste_stats.find({}).sort('timestamp', -1).limit(30))
+        carbon_data = list(mongo.db.carbon_activities.find({'user_id': user_id}).sort('timestamp', -1).limit(30))
+        waste_data = list(mongo.db.waste_stats.find({'user_id': user_id}).sort('timestamp', -1).limit(30))
 
         # Calculate totals with proper handling of None values
         carbon_offset = sum(float(activity.get('carbon_impact', 0)) for activity in carbon_data if activity.get('carbon_impact') is not None)
@@ -1422,7 +1425,7 @@ def get_dashboard_data():
         waste_progress = min(100, (waste_reduction / 50) * 100) if waste_reduction > 0 else 0
 
         # Get recent activities for timeline
-        recent_activities = list(mongo.db.carbon_activities.find({})
+        recent_activities = list(mongo.db.carbon_activities.find({'user_id': user_id})
                                  .sort('timestamp', -1)
                                  .limit(5))
 
@@ -1434,40 +1437,101 @@ def get_dashboard_data():
                 'date': activity.get('timestamp', datetime.now()).strftime('%Y-%m-%d')
             })
 
-        # Get achievements
+        # Get user's achievements from database or initialize if not exists
+        user_achievements = mongo.db.user_achievements.find_one({'user_id': user_id}) or {
+            'user_id': user_id,
+            'achievements': {
+                'green_thumb': False,
+                'energy_saver': False,
+                'recycler': False
+            },
+            'challenges': {
+                'zero_waste_week': {
+                    'active': True,
+                    'start_date': datetime.now(),
+                    'progress': 0,
+                    'target': 7  # 7 days target
+                },
+                'energy_saver': {
+                    'active': True,
+                    'start_date': datetime.now(),
+                    'progress': 0,
+                    'target': 20  # 20% reduction target
+                }
+            }
+        }
+
+        # Update achievements based on current progress
         achievements = [
             {
                 'name': 'Green Thumb',
                 'icon': 'fa-seedling',
-                'unlocked': carbon_offset > 50
+                'unlocked': carbon_offset > 50 or user_achievements['achievements']['green_thumb'],
+                'progress': min(100, (carbon_offset / 50) * 100)
             },
             {
                 'name': 'Energy Saver',
                 'icon': 'fa-bolt',
-                'unlocked': carbon_offset > 100
+                'unlocked': carbon_offset > 100 or user_achievements['achievements']['energy_saver'],
+                'progress': min(100, (carbon_offset / 100) * 100)
             },
             {
                 'name': 'Recycler',
                 'icon': 'fa-recycle',
-                'unlocked': waste_reduction > 30
+                'unlocked': waste_reduction > 30 or user_achievements['achievements']['recycler'],
+                'progress': min(100, (waste_reduction / 30) * 100)
             }
         ]
 
-        # Get active challenges
+        # Update challenge progress
+        # Zero Waste Week Challenge
+        zero_waste_days = len(set(
+            activity.get('timestamp', datetime.now()).strftime('%Y-%m-%d')
+            for activity in waste_data
+        ))
+        zero_waste_progress = min(100, (zero_waste_days / 7) * 100)
+
+        # Energy Saver Challenge
+        # Calculate energy reduction compared to baseline
+        baseline_energy = 100  # Example baseline in kWh
+        current_energy = sum(float(activity.get('usage', 0)) for activity in carbon_data)
+        energy_reduction = ((baseline_energy - current_energy) / baseline_energy) * 100
+        energy_saver_progress = min(100, max(0, energy_reduction))
+
+        # Get active challenges with updated progress
         challenges = [
             {
                 'title': 'Zero Waste Week',
                 'description': 'Minimize your waste production for 7 days',
                 'status': 'active',
-                'progress': min(100, (waste_reduction / 20) * 100) if waste_reduction > 0 else 0
+                'progress': zero_waste_progress,
+                'days_completed': zero_waste_days,
+                'target_days': 7
             },
             {
                 'title': 'Energy Saver',
                 'description': 'Reduce energy consumption by 20%',
                 'status': 'active',
-                'progress': min(100, (carbon_offset / 50) * 100) if carbon_offset > 0 else 0
+                'progress': energy_saver_progress,
+                'current_reduction': round(energy_reduction, 1),
+                'target_reduction': 20
             }
         ]
+
+        # Update achievements in database
+        mongo.db.user_achievements.update_one(
+            {'user_id': user_id},
+            {
+                '$set': {
+                    'achievements.green_thumb': carbon_offset > 50,
+                    'achievements.energy_saver': carbon_offset > 100,
+                    'achievements.recycler': waste_reduction > 30,
+                    'challenges.zero_waste_week.progress': zero_waste_progress,
+                    'challenges.energy_saver.progress': energy_saver_progress
+                }
+            },
+            upsert=True
+        )
 
         # Calculate eco score (0-100)
         eco_score = min(100, int((carbon_offset + waste_reduction) / 2))
@@ -1484,9 +1548,57 @@ def get_dashboard_data():
             }
         ]
 
-        # Get community stats
-        total_users = mongo.db.carbon_activities.distinct('user_id')
-        user_rank = random.randint(1, max(len(total_users), 1))
+        # Calculate community stats and rank
+        # Get all users' total impact (carbon offset + waste reduction)
+        pipeline = [
+            {
+                '$lookup': {
+                    'from': 'carbon_activities',
+                    'localField': '_id',
+                    'foreignField': 'user_id',
+                    'as': 'carbon_activities'
+                }
+            },
+            {
+                '$lookup': {
+                    'from': 'waste_stats',
+                    'localField': '_id',
+                    'foreignField': 'user_id',
+                    'as': 'waste_stats'
+                }
+            },
+            {
+                '$project': {
+                    'total_impact': {
+                        '$add': [
+                            {'$sum': '$carbon_activities.carbon_impact'},
+                            {'$sum': '$waste_stats.items_recycled'}
+                        ]
+                    }
+                }
+            },
+            {
+                '$sort': {'total_impact': -1}  # Sort by total impact in descending order
+            }
+        ]
+
+        # Execute the aggregation pipeline
+        user_rankings = list(mongo.db.users.aggregate(pipeline))
+        
+        # Find current user's rank
+        user_rank = 1
+        for i, ranking in enumerate(user_rankings, 1):
+            if str(ranking['_id']) == str(user_id):
+                user_rank = i
+                break
+
+        total_users = len(user_rankings)
+        rank_percentile = round((1 - (user_rank / max(total_users, 1))) * 100, 1)
+        
+        # Calculate contribution percentage based on actual impact
+        user_total_impact = carbon_offset + waste_reduction
+        total_community_impact = sum(rank['total_impact'] for rank in user_rankings)
+        contribution = round((user_total_impact / max(total_community_impact, 1)) * 100, 1)
 
         return jsonify({
             'eco_score': eco_score,
@@ -1502,8 +1614,8 @@ def get_dashboard_data():
             'challenges': challenges,
             'community': {
                 'rank': user_rank,
-                'rank_percentile': round((1 - (user_rank / max(len(total_users), 1))) * 100, 1),
-                'contribution': round(random.uniform(60, 90), 1)
+                'rank_percentile': rank_percentile,
+                'contribution': contribution
             }
         })
     except Exception as e:
