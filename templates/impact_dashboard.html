@@ -363,71 +363,74 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(response => response.json())
             .then(data => {
                 // Update eco score with animation
-                animateNumber('ecoScore', data.eco_score);
+                animateNumber('ecoScore', data.eco_score || 0);
                 
                 // Update impact metrics with animation
-                animateNumber('carbonOffset', data.carbon_offset);
-                animateNumber('wasteReduction', data.waste_reduction);
+                animateNumber('carbonOffset', data.carbon_offset || 0);
+                animateNumber('wasteReduction', data.waste_reduction || 0);
                 
                 // Update progress bars
-                document.getElementById('carbonProgress').style.width = data.progress.carbonProgress + '%';
-                document.getElementById('wasteProgress').style.width = data.progress.wasteProgress + '%';
+                document.getElementById('carbonProgress').style.width = (data.progress?.carbonProgress || 0) + '%';
+                document.getElementById('wasteProgress').style.width = (data.progress?.wasteProgress || 0) + '%';
                 
                 // Update timeline
                 const timeline = document.getElementById('timeline');
-                timeline.innerHTML = data.timeline.map(item => `
+                timeline.innerHTML = (data.timeline || []).map(item => `
                     <div class="timeline-item">
-                        <h6 class="mb-1">${item.title}</h6>
-                        <p class="text-muted mb-0">${item.description}</p>
-                        <small class="text-muted">${item.date}</small>
+                        <h6 class="mb-1">${item.title || 'Activity'}</h6>
+                        <p class="text-muted mb-0">${item.description || 'No description'}</p>
+                        <small class="text-muted">${item.date || 'No date'}</small>
                     </div>
                 `).join('');
                 
                 // Update insights
                 const insights = document.getElementById('insights');
-                insights.innerHTML = data.insights.map(insight => `
+                insights.innerHTML = (data.insights || []).map(insight => `
                     <div class="insight-item">
-                        <h6 class="mb-2">${insight.title}</h6>
-                        <p class="mb-0">${insight.description}</p>
+                        <h6 class="mb-2">${insight.title || 'Insight'}</h6>
+                        <p class="mb-0">${insight.description || 'No description'}</p>
                     </div>
                 `).join('');
                 
                 // Update achievements
                 const achievements = document.getElementById('achievements');
-                achievements.innerHTML = data.achievements.map(achievement => `
+                achievements.innerHTML = (data.achievements || []).map(achievement => `
                     <div class="achievement-item">
-                        <i class="fas ${achievement.icon} achievement-icon ${achievement.unlocked ? 'text-success' : 'text-muted'}"></i>
-                        <small class="d-block">${achievement.name}</small>
+                        <i class="fas ${achievement.icon || 'fa-star'} achievement-icon ${achievement.unlocked ? 'text-success' : 'text-muted'}"></i>
+                        <small class="d-block">${achievement.name || 'Achievement'}</small>
                     </div>
                 `).join('');
                 
                 // Update challenges
                 const challenges = document.getElementById('challenges');
-                challenges.innerHTML = data.challenges.map(challenge => `
+                challenges.innerHTML = (data.challenges || []).map(challenge => `
                     <div class="challenge-item">
                         <div class="d-flex justify-content-between align-items-center mb-2">
-                            <h6 class="mb-0">${challenge.title}</h6>
-                            <span class="badge bg-${challenge.status === 'active' ? 'success' : 'secondary'}">${challenge.status}</span>
+                            <h6 class="mb-0">${challenge.title || 'Challenge'}</h6>
+                            <span class="badge bg-${challenge.status === 'active' ? 'success' : 'secondary'}">${challenge.status || 'inactive'}</span>
                         </div>
-                        <p class="text-muted mb-2">${challenge.description}</p>
+                        <p class="text-muted mb-2">${challenge.description || 'No description'}</p>
                         <div class="progress challenge-progress">
-                            <div class="progress-bar bg-success" role="progressbar" style="width: ${challenge.progress}%"></div>
+                            <div class="progress-bar bg-success" role="progressbar" style="width: ${challenge.progress || 0}%"></div>
                         </div>
                     </div>
                 `).join('');
                 
                 // Update community stats
-                document.getElementById('globalRank').textContent = '#' + data.community.rank;
-                document.getElementById('rankProgress').style.width = data.community.rank_percentile + '%';
-                document.getElementById('communityContribution').textContent = data.community.contribution + '%';
-                document.getElementById('contributionProgress').style.width = data.community.contribution + '%';
+                document.getElementById('globalRank').textContent = '#' + (data.community?.rank || 0);
+                document.getElementById('rankProgress').style.width = (data.community?.rank_percentile || 0) + '%';
+                document.getElementById('communityContribution').textContent = (data.community?.contribution || 0) + '%';
+                document.getElementById('contributionProgress').style.width = (data.community?.contribution || 0) + '%';
             })
             .catch(error => console.error('Error updating dashboard:', error));
     }
     
     function animateNumber(elementId, target) {
         const element = document.getElementById(elementId);
-        const start = parseInt(element.textContent) || 0;
+        if (!element) return;
+        
+        const currentText = element.textContent;
+        const start = isNaN(parseInt(currentText)) ? 0 : parseInt(currentText);
         const duration = 1000;
         const steps = 60;
         const increment = (target - start) / steps;
@@ -439,7 +442,7 @@ document.addEventListener('DOMContentLoaded', function() {
             
             if ((increment >= 0 && current >= target) || 
                 (increment < 0 && current <= target)) {
-                element.textContent = target;
+                element.textContent = Math.round(target);
                 clearInterval(timer);
             }
         }, duration / steps);
