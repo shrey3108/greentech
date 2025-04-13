@@ -16,9 +16,12 @@
                         <h3 class="mb-1">{{ current_user.name }}</h3>
                         <p class="text-muted">{{ current_user.user_data.email }}</p>
                     </div>
-                    <div class="d-grid">
+                    <div class="d-grid gap-2">
                         <button class="btn btn-outline-success" type="button" data-bs-toggle="modal" data-bs-target="#editProfileModal">
                             <i class="fas fa-edit me-2"></i>Edit Profile
+                        </button>
+                        <button class="btn btn-success" type="button" id="downloadReportBtn">
+                            <i class="fas fa-download me-2"></i>Download Impact Report
                         </button>
                     </div>
                 </div>
@@ -106,23 +109,119 @@
 // Load user statistics
 function loadUserStats() {
     Promise.all([
-        fetch('/api/get_carbon_stats').then(res => res.json()),
-        fetch('/get_waste_data').then(res => res.json()),
+        fetch('/get_dashboard_data').then(res => res.json()),
+        fetch('/get_user_stats').then(res => res.json()),
         fetch('/api/food/stats').then(res => res.json())
     ])
-    .then(([carbonData, wasteData, foodData]) => {
+    .then(([dashboardData, userStats, foodStats]) => {
+        // Update carbon saved
         document.getElementById('carbonSaved').textContent = 
-            Math.round(carbonData.total_savings || 0);
+            Math.round(dashboardData.carbon_offset || 0);
+        
+        // Update waste recycled
         document.getElementById('wasteRecycled').textContent = 
-            Math.round(wasteData.total_recycled || 0);
+            Math.round(dashboardData.waste_reduction || 0);
+        
+        // Update food saved
         document.getElementById('foodSaved').textContent = 
-            Math.round(foodData.total_saved || 0);
+            Math.round(foodStats.total_food_saved || 0);
+            
+        // Store data for report generation
+        window.userReportData = {
+            name: "{{ current_user.name }}",
+            email: "{{ current_user.user_data.email }}",
+            carbonSaved: Math.round(dashboardData.carbon_offset || 0),
+            wasteRecycled: Math.round(dashboardData.waste_reduction || 0),
+            foodSaved: Math.round(foodStats.total_food_saved || 0),
+            rank: dashboardData.community?.rank || 0
+        };
     })
-    .catch(error => console.error('Error loading stats:', error));
+    .catch(error => {
+        console.error('Error loading stats:', error);
+        // Set default values if there's an error
+        document.getElementById('carbonSaved').textContent = '0';
+        document.getElementById('wasteRecycled').textContent = '0';
+        document.getElementById('foodSaved').textContent = '0';
+        
+        // Store default data for report generation
+        window.userReportData = {
+            name: "{{ current_user.name }}",
+            email: "{{ current_user.user_data.email }}",
+            carbonSaved: 0,
+            wasteRecycled: 0,
+            foodSaved: 0,
+            rank: 0
+        };
+    });
+}
+
+// Generate and download report
+function generateReport() {
+    if (!window.userReportData) {
+        alert('Please wait while we load your data...');
+        return;
+    }
+    
+    const data = window.userReportData;
+    const today = new Date();
+    const formattedDate = today.toLocaleDateString('en-US', { 
+        day: 'numeric', 
+        month: 'long', 
+        year: 'numeric' 
+    });
+    
+    // Create report content
+    let reportContent = `🌿 EcoTrack+ Impact Report
+
+👤 Name: ${data.name}
+📧 Email: ${data.email}
+📅 Generated On: ${formattedDate}
+
+━━━━━━━━━━━━━━━━━━━━━━━
+
+🌱 Your Environmental Impact
+
+Congratulations! Through your conscious choices and consistent actions, you've made a real difference in making our planet greener and cleaner. Here's a snapshot of your environmental contributions so far:
+
+   • 🌬️ CO₂ Saved: ${data.carbonSaved} kg
+   • 🗑️ Waste Recycled: ${data.wasteRecycled} kg
+   • 🥗 Food Saved: ${data.foodSaved} kg
+   • 🏆 Your Rank: #${data.rank} in your region
+
+━━━━━━━━━━━━━━━━━━━━━━━
+
+💚 Your Green Footprint Matters!
+
+Every small step counts — and you've already taken some powerful ones. By reducing waste, saving food, and cutting down CO₂ emissions, you're not just contributing to sustainability — you're leading the way for others. Keep going and continue to inspire change in your community. 🌎✨
+
+Together, we can create a better future.
+
+━━━━━━━━━━━━━━━━━━━━━━━
+
+– Team EchoTrack+`;
+    
+    // Create a Blob with the report content
+    const blob = new Blob([reportContent], { type: 'text/plain' });
+    
+    // Create a download link
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = `EcoTrack_Impact_Report_${today.getFullYear()}_${today.getMonth()+1}_${today.getDate()}.txt`;
+    
+    // Append to the document, trigger click, and remove
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
 }
 
 // Load stats when page loads
 document.addEventListener('DOMContentLoaded', loadUserStats);
+
+// Add event listener for download button
+document.getElementById('downloadReportBtn').addEventListener('click', generateReport);
 
 // Password validation
 document.getElementById('editProfileForm').addEventListener('submit', function(event) {
