@@ -179,8 +179,6 @@
 {% endblock %}
 
 {% block scripts %}
-
-
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // Fetch latest stats periodically
@@ -198,9 +196,21 @@ document.addEventListener('DOMContentLoaded', function() {
             .catch(error => console.error('Error fetching stats:', error));
     }
 
-    // Update stats every 5 minutes
     updateStats();
     setInterval(updateStats, 300000);
 });
+</script>
+
+<!-- 👇 Back button handler for Capacitor -->
+<script type="module">
+  import { App } from 'https://cdn.jsdelivr.net/npm/@capacitor/app@5.0.6/dist/index.js';
+
+  App.addListener('backButton', () => {
+    if (window.history.length > 1) {
+      window.history.back();
+    } else {
+      App.exitApp();
+    }
+  });
 </script>
 {% endblock %}
