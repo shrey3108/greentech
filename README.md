@@ -99,8 +99,7 @@ A comprehensive platform for energy monitoring, waste management, and sustainabl
     ├── index.html
     ├── energy_monitor.html
     └── ...
-#### GitHub Repository Structure
-
+```
 
 ## Team Members:
 
