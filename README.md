@@ -11,13 +11,36 @@ A comprehensive platform for energy monitoring, waste management, and sustainabl
 - Environmental impact dashboard
 - AI-powered recommendations
 
-## Tech Stack
 
-- Python 3.10
-- Flask
+## Technology Stack:
+
+<img src="https://img.shields.io/badge/html5%20-%23E34F26.svg?&style=for-the-badge&logo=html5&logoColor=white"/> <img src="https://img.shields.io/badge/css3%20-%231572B6.svg?&style=for-the-badge&logo=css3&logoColor=white"/> <img src="https://img.shields.io/badge/javascript%20-%23323330.svg?&style=for-the-badge&logo=javascript&logoColor=%23F7DF1E"/> <img src="https://img.shields.io/badge/MongoDB-4EA94B?style=for-the-badge&logo=mongodb&logoColor=white"/>  <img src="https://img.shields.io/badge/Flask-000000?style=for-the-badge&logo=flask&logoColor=white"/>
+<img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white"/>
+ <img src="https://img.shields.io/badge/github%20-%23121011.svg?&style=for-the-badge&logo=github&logoColor=white"/> 
+
+
+## 🛠️ Technology Stack
+
+### Backend
+- **Framework**: Python Flask
+- **Database**: MongoDB
+- **AI/ML**: Google Gemini AI, scikit-learn
+- **Authentication**: JWT
+
+### Frontend
+- **Framework**: HTML5, CSS3, JavaScript
+- **Responsive Design**: Bootstrap
+- **Interactive UI**: jQuery, AJAX
+
+### How to Get Started?
+## 📋 Prerequisites
+
+- Python 3.8 or higher
 - MongoDB
-- Chart.js
-- Google Generative AI
+- Google API Key for Gemini AI
+- Required Python packages (listed in requirements.txt)
+
+## 🚀 Deployment
 
 ## Local Development
 
@@ -76,3 +99,32 @@ A comprehensive platform for energy monitoring, waste management, and sustainabl
     ├── index.html
     ├── energy_monitor.html
     └── ...
+#### GitHub Repository Structure
+
+
+## Team Members:
+
+| S.No. | Name | Role | GitHub Username:octocat: |
+| --------------- | --------------- | --------------- | --------------- |
+| 1. | Shrey Shukla | Backend  Development| [@shrey3108](https://github.com/shrey3108)  |
+| 2. | Prasham Shah| 	Frontend+ML  Development | [@Prasham0105](https://github.com/prasham0105)  |
+
+## Maintainers✨
+
+<table>
+  <tbody><tr>
+    <td align="center"><a href="https://github.com/shrey3108"><img alt="" src="https://avatars.githubusercontent.com/shrey3108" width="100px;"><br><sub><b>Shrey Shukla</b></sub></a><br><a href="https://github.com/shrey3108/greentech" title="Code">💻</a></td>
+    <td align="center"><a href="https://github.com/prasham0105"><img alt="" src="https://avatars.githubusercontent.com/prasham0105" width="100px;"><br><sub><b> Prasham Shah </b></sub></a><br><a href="https://github.com/shrey3108/greentech" title="Code">💻</a></td>
+
+  </tr>
+</tbody></table>
+
+
+# License :memo:
+
+This project follows the [MIT License](https://choosealicense.com/licenses/mit/).
+
+[![Uses Git](https://forthebadge.com/images/badges/uses-git.svg)](https://github.com/rudrakshi99/Farmer-Call-Center) 
+[![forthebadge](https://forthebadge.com/images/badges/made-with-javascript.svg)](https://github.com/rudrakshi99/Farmer-Call-Center)
+[![forthebadge](https://forthebadge.com/images/badges/made-with-python.svg)](https://github.com/rudrakshi99/Farmer-Call-Center)
+[![Built with love](https://forthebadge.com/images/badges/built-with-love.svg)](https://github.com/rudrakshi99/Farmer-Call-Center.git) [![Built By Developers](https://forthebadge.com/images/badges/built-by-developers.svg)](https://github.com/rudrakshi99/Farmer-Call-Center) 
