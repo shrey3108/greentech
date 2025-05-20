@@ -329,7 +329,7 @@ def food_waste_page():
 
         return render_template('food_waste.html', stats=stats, items=items)
     except Exception as e:
-        print(f"Error in food_waste_page: {str(e)}")
+        # print(f"Error in food_waste_page: {str(e)}")
         return render_template('food_waste.html',
                                stats={"total_food_saved": 0, "meals_provided": 0, "co2_saved": 0},
                                items=[])
